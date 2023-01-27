@@ -115,6 +115,13 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     plot(olas@header, main = paste0("Tower candidates and corrected candidates"))
   }
 
+  # Replace CRS of LAS object to ensure compatibility
+  # with the definition of a sp object as otherwise a conflict
+  # will likely occur when using lidR::clip_roi()
+  # This is a short term fix only, the real solution is
+  # to ditch sp/rgeos in favor of sf
+  lidR::st_crs(olas) <- raster::crs(pwll)
+
   # Loop on each segment
   output <- vector("list", length(spwll))
   for (k in 1:length(output))

@@ -44,6 +44,14 @@ classify_transmissiontowers = function(las, towers, dtm, threshold = 2)
 classify_transmissiontowers.LAS = function(las, towers, dtm, threshold = 2)
 {
   towers <- tower.boundingbox(towers)
+
+  # Convert sp object to sf and force CRS definition
+  # to ensure compatibility with lidR::merge_spatial()
+  # This is a short term fix only, the real solution is
+  # to ditch sp/rgeos in favor of sf
+  towers <- sf::st_as_sf(towers)
+  sf::st_crs(towers) <- lidR::st_crs(las)
+
   tmp <- lidR::merge_spatial(las, towers, "towers")
   tmp <- lidR::normalize_height(tmp, dtm)
   las@data$Classification[tmp$Z > threshold & tmp$towers == TRUE] <- lidR::LASTRANSMISSIONTOWER

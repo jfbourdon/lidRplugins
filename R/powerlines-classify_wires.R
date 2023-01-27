@@ -74,6 +74,13 @@ classify_wires.LAS = function(las, wires, dtm)
     for (k in 1:2)
       cloth <- raster::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
 
+    # Convert sp object to sf and force CRS definition
+    # to ensure compatibility with lidR::merge_spatial()
+    # This is a short term fix only, the real solution is
+    # to ditch sp/rgeos in favor of sf
+    pwires <- sf::st_as_sf(pwires)
+    sf::st_crs(pwires) <- lidR::st_crs(sub)
+
     sub <- merge_spatial(sub, pwires, "pwires")
     sub <- merge_spatial(sub, cloth, "cloth")
     sub$cloth[is.nan(sub$cloth)] <- Inf
