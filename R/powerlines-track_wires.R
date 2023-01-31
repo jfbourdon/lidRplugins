@@ -60,6 +60,7 @@
 #' @export
 track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-circuit"), debug = FALSE)
 {
+  if (is(towers, "sf") | is(towers, "sfc")) towers <- sf::as_Spatial(towers)
   if (is(powerline, "sf") | is(powerline, "sfc")) powerline <- sf::as_Spatial(powerline)
 
   tower.spec <- get_tower_spec(type)
