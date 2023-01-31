@@ -260,10 +260,11 @@ find_transmissiontowers.LAScluster = function(las, powerline, dtm, type = c("wai
 #' @export
 find_transmissiontowers.LAScatalog = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
+  if (is(powerline, "sf") | is(powerline, "sfc")) powerline <- sf::as_Spatial(powerline)
   pwrlp <- rgeos::gBuffer(powerline, width = buffer)
   ctg <- lidR::catalog_intersect(las, pwrlp)
-  las$processed <- FALSE
-  las$processed[row.names(las) %in% row.names(ctg)] <- TRUE
+  #las$processed <- FALSE
+  #las$processed[row.names(las) %in% row.names(ctg)] <- TRUE
 
   options = list(need_buffer = TRUE)
   output <- lidR::catalog_sapply(las, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
