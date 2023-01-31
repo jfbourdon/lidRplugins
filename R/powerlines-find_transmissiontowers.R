@@ -76,6 +76,7 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
 
   # The name 'las' will be used later. Keep original object untouched
   olas <- las
+  crs_las <- lidR::st_crs(ctg)
 
   # Get the spec of the transmission towers
   tower.spec <- get_tower_spec(type)
@@ -235,12 +236,16 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
       #plot(textent, add = TRUE,  border = tlocation$deflection + 1)
       graphics::arrows(ptowers@coords[,1], ptowers@coords[,2], ptowers@coords[,1] + 100 * ptowers$ux,  ptowers@coords[,2] + 100 * ptowers$uy, length = 0.05, col = ptowers$deflection + 1)
     }
-
+    ptowers <- sf::st_as_sf(ptowers)
+    sf::st_crs(ptowers) <- crs_las
     return(ptowers)
   }
   else
   {
-    return(output[[1]])
+    #ptowers <- sf::st_as_sf(output[[1]])
+    #sf::st_crs(ptowers) <- crs_las
+    #return(ptowers)
+    return(NULL)
   }
 }
 
@@ -266,8 +271,8 @@ find_transmissiontowers.LAScatalog = function(las, powerline, dtm, type = c("wai
   #las$processed <- FALSE
   #las$processed[row.names(las) %in% row.names(ctg)] <- TRUE
 
-  options = list(need_buffer = TRUE)
-  output <- lidR::catalog_sapply(las, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
+  options = list(need_buffer = TRUE, automerge = TRUE, drop_null = TRUE)
+  output <- lidR::catalog_map(las, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
   return(output)
 }
 
@@ -358,7 +363,7 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
   if (all(!rm))
   {
     out <- towers[0,]
-    out@bbox <- las@bbox
+    out@bbox <- lidR::bbox(las)
     return(out)
   }
 
