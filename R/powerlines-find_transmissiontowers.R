@@ -304,7 +304,22 @@ tower.candidates = function(las, dtm, tower.spec, angle)
   # This because in both we could miss some some towers but not the same.
   rtowers <- find_localmaxima(sub, c(200, tower.spec$length[2]*1.2, angle))
   #ntowers <- lidR::local_maximum(nsub, c(150, tower.spec$length[2]*1.2, angle))
-  stowers <- find_localmaxima(ssub, c(200, tower.spec$length[2]*1.2, angle))
+  if (lidR::npoints(ssub) > 0)
+  {
+    stowers <- find_localmaxima(ssub, c(200, tower.spec$length[2]*1.2, angle))
+    
+    #ntowers$Z <- ntowers$Zref
+    #ntowers$Zref <- NULL
+    stowers$Z <- stowers$Zraw
+    stowers$Zraw <- NULL
+    #plot(las) %>% add_treetops3d(rtowers, radius = 7)
+    #plot(las) %>% add_treetops3d(ntowers, radius = 7)
+    #plot(las) %>% add_treetops3d(stowers, radius = 4)
+  }
+  else
+  {
+    stowers <- rtowers[0,]
+  }
 
   #ntowers$Z <- ntowers$Zref
   #ntowers$Zref <- NULL
