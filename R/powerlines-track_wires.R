@@ -6,9 +6,9 @@
 #' instead it guesses their equation that can be computed deterministically from the tower coordinates,
 #' their height and their type.
 #'
-#' @param towers \code{SpatialPointsDataFrame} containing the positions of the towers as returned by
+#' @param towers \code{sf POINT} or \code{sfc POINT} containing the positions of the towers as returned by
 #' \link{find_transmissiontowers}
-#' @param powerline A \code{SpatialLines*} that map the electrical network accurately. The method may
+#' @param powerline \code{sf LINESTRING} or \code{sfc LINESTRING} that map the electrical network accurately. The method may
 #' be improved later to get rid of this information.
 #' @param dtm A RasterLayer. Digital Terrain Model is useful to find a relevant elevation for virtual
 #' towers
@@ -60,11 +60,12 @@
 #' @export
 track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-circuit"), debug = FALSE)
 {
-  if (is(towers, "sf") | is(towers, "sfc")) towers <- sf::as_Spatial(towers)
-  if (is(powerline, "sf") | is(powerline, "sfc")) powerline <- sf::as_Spatial(powerline)
+  if (!(is(towers, "sf") | is(towers, "sfc"))) stop("towers must be object of class sf of sfc")
+  if (!(is(powerline, "sf") | is(powerline, "sfc"))) stop("powerline must be object of class sf of sfc")
 
   tower.spec <- get_tower_spec(type)
 
+  towers <- sf::as_Spatial(towers)
   tlocation <- towers
   proj <- tlocation@proj4string
 
@@ -85,7 +86,14 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
   }
 
   # Crop the lines to the extent of the ROI
-  pwll <- raster::crop(powerline, extent(dtm))
+  pwll <- sf::st_crop(powerline, raster::extent(dtm))
+  if (nrow(pwll) == 0)
+  {
+    coords <- matrix(0, ncol = 2)
+    data   <- data.frame(z = numeric(1), virtual = integer(1), ID = 0)
+    output <- sp::SpatialPointsDataFrame(coords, data, proj4string = tlocation@proj4string)
+    return(output[0,])
+  }
 
   if (debug)
   {
@@ -94,6 +102,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
   }
 
   # This starts like the tower detection by fixing the shapefile
+  pwll <- sf::as_Spatial(pwll)
   pwll <- gJoinLines(pwll, 2)
   pwll <- rgeos::gSimplify(pwll, 40)
   spwll <- gSplitLines(pwll)
@@ -163,6 +172,16 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
     lwires <- sp::SpatialLines(wire, proj4string = proj)
     crlwires <- raster::crop(lwires, extent(dtm) - 1)
     pwires <- rgeos::gBuffer(lwires, width = 0.3*tower.spec$length[2], capStyle = "SQUARE")
+
+    pwires_crop <- sf::st_crop(sf::st_as_sf(pwires), sf::st_as_sf(pwlp))
+    if (nrow(pwires_crop) == 0)
+    {
+      coords <- matrix(0, ncol = 2)
+      data   <- data.frame(z = numeric(1), virtual = integer(1), ID = 0)
+      output <- sp::SpatialPointsDataFrame(coords, data, proj4string = tlocation@proj4string)
+      return(output[0,])
+    }
+    
     pwires <- raster::crop(pwires, pwlp)
     pwires <- sp::disaggregate(pwires)
 
