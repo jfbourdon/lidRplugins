@@ -82,6 +82,11 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
   tower.spec <- get_tower_spec(type)
 
   # Crop the lines to the extent of the las
+  pwll_crop <- sf::st_crop(sf::st_as_sf(powerline), raster::extent(las))
+  if (nrow(pwll_crop) == 0)
+  {
+    return(NULL)
+  }
   pwll <- raster::crop(powerline, raster::extent(las))
 
   if (debug)
