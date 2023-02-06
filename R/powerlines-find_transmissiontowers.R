@@ -321,14 +321,6 @@ tower.candidates = function(las, dtm, tower.spec, angle)
     stowers <- rtowers[0,]
   }
 
-  #ntowers$Z <- ntowers$Zref
-  #ntowers$Zref <- NULL
-  stowers$Z <- stowers$Zraw
-  stowers$Zraw <- NULL
-  #plot(las) %>% add_treetops3d(rtowers, radius = 7)
-  #plot(las) %>% add_treetops3d(ntowers, radius = 7)
-  #plot(las) %>% add_treetops3d(stowers, radius = 4)
-
   if (length(rtowers) == 0 && length(stowers) == 0)
     return(rtowers)
 
