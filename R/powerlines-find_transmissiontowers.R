@@ -152,6 +152,11 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
 
     # Find candidate location at being a transmission tower
     towers <- tower.candidates(las, dtm, tower.spec, angle)
+    if (length(towers) == 0)
+    {
+      output[[k]] <- towers
+      next
+    }
 
     if (debug)
     {
@@ -302,30 +307,36 @@ tower.candidates = function(las, dtm, tower.spec, angle)
 
   # Find the local max using an oriented windows using both raw an normalized data
   # This because in both we could miss some some towers but not the same.
-  rtowers <- find_localmaxima(sub, c(200, tower.spec$length[2]*1.2, angle))
-  #ntowers <- lidR::local_maximum(nsub, c(150, tower.spec$length[2]*1.2, angle))
-  if (lidR::npoints(ssub) > 0)
-  {
+  nulltower <- sf::st_as_sf(las@data[1], coords = c("X", "Y"), crs = sf::st_crs(lidR::crs(las)))
+  if (lidR::npoints(sub)) {
+    rtowers <- find_localmaxima(sub, c(200, tower.spec$length[2]*1.2, angle))
+  } else {
+    rtowers <- nulltower[0,]
+  }
+  
+  if (lidR::npoints(ssub)) {
     stowers <- find_localmaxima(ssub, c(200, tower.spec$length[2]*1.2, angle))
-    
-    #ntowers$Z <- ntowers$Zref
-    #ntowers$Zref <- NULL
     stowers$Z <- stowers$Zraw
     stowers$Zraw <- NULL
-    #plot(las) %>% add_treetops3d(rtowers, radius = 7)
-    #plot(las) %>% add_treetops3d(ntowers, radius = 7)
-    #plot(las) %>% add_treetops3d(stowers, radius = 4)
+  } else {
+    stowers <- nulltower[0,]
   }
-  else
-  {
-    stowers <- rtowers[0,]
-  }
+  
+  
+  #ntowers <- lidR::local_maximum(nsub, c(150, tower.spec$length[2]*1.2, angle))
+  #ntowers$Z <- ntowers$Zref
+  #ntowers$Zref <- NULL
+  
+  #plot(las) %>% add_treetops3d(rtowers, radius = 7)
+  #plot(las) %>% add_treetops3d(ntowers, radius = 7)
+  #plot(las) %>% add_treetops3d(stowers, radius = 4)
 
-  if (length(rtowers) == 0 && length(stowers) == 0)
-    return(rtowers)
-
-  # Keep only one tower if duplicates
   towers <- rbind(stowers, rtowers)
+  if (nrow(towers) == 0)
+    return(sf::as_Spatial(nulltower)[0,])
+  
+  # Keep only one tower if duplicates
+  towers <- sf::as_Spatial(towers)
   towers <- towers[!duplicated(towers@data),]
   #plot(las) %>% add_treetops3d(towers, radius = 7)
 
@@ -647,6 +658,7 @@ gJoinLines = function(sl, th = 2)
 
   if (nrow(join) > 1) stop("Internal error: to many lines to join")
   if (nrow(join) == 0) return(sl)
+  if (length(join) == length(sp)) return(sl)
 
   cc <- cc[as.numeric(join),]
   xm <- mean(cc[,1])
