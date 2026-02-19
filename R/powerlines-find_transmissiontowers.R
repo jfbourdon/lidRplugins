@@ -40,11 +40,12 @@
 #'
 #' plot(header(las))
 #' plot(towers, add = TRUE, col = towers$deflection + 1)
+#' coords <- sf::st_coordinates(towers)
 #' arrows(
-#'    towers@coords[,1],
-#'    towers@coords[,2],
-#'    towers@coords[,1] + 100 * towers$ux,
-#'    towers@coords[,2] + 100 * towers$uy,
+#'    coords[,1],
+#'    coords[,2],
+#'    coords[,1] + 100 * towers$ux,
+#'    coords[,2] + 100 * towers$uy,
 #'    length = 0.05,
 #'    col = towers$deflection + 1)
 #'
@@ -61,59 +62,62 @@ find_transmissiontowers = function(las, powerline, dtm, type = c("waist-type", "
 #' @export
 find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
-  if (is(powerline, "sf") | is(powerline, "sfc")) powerline <- sf::as_Spatial(powerline)
-  lidR:::assert_is_all_of(powerline, "SpatialLinesDataFrame")
+  lidR:::assert_is_all_of(powerline, "sf")
   lidR:::assert_is_all_of(dtm, "RasterLayer")
   lidR:::assert_all_are_positive(buffer)
-  stopifnot(st_crs(las) == sf::st_crs(powerline))
+  stopifnot(lidR::st_crs(las) == sf::st_crs(powerline))
 
   if (debug)
   {
-    opar = graphics::par("mfrow")
+    opar <- graphics::par("mfrow")
     graphics::par(mfrow = c(2,3))
     on.exit(graphics::par(mfrow = opar))
   }
 
   # The name 'las' will be used later. Keep original object untouched
   olas <- las
-  crs_las <- lidR::st_crs(ctg)
 
   # Get the spec of the transmission towers
   tower.spec <- get_tower_spec(type)
 
   # Crop the lines to the extent of the las
-  pwll_crop <- sf::st_crop(sf::st_as_sf(powerline), raster::extent(las))
-  if (nrow(pwll_crop) == 0)
+  pwll <- sf::st_crop(powerline, lidR::st_bbox(las))
+  if (nrow(pwll) == 0)
   {
     return(NULL)
   }
-  pwll <- raster::crop(powerline, raster::extent(las))
 
   if (debug)
   {
     plot(las@header, main = paste0("Raw powerline network"))
-    plot(pwll, add = TRUE, col = 1:length(pwll))
+    plot(pwll, add = TRUE, col = 1:nrow(pwll))
   }
 
-  pwll <- gJoinLines(pwll, 2)
-  pwll <- rgeos::gSimplify(pwll, 40)
+  pwll <- pwll |>
+    sf::as_Spatial() |>
+    gJoinLines(2) |>
+    sf::st_as_sf() |>
+    sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
 
   # Split each segment/section of the powerline
   # This allow to support powerline deflection
-  spwll <- gSplitLines(pwll)
-  spwll <- gElongateLines(spwll, 25)
-  if (length(spwll) != length(spwll))
+  spwll <- pwll |>
+    sf::as_Spatial() |>
+    gSplitLines() |>
+    gElongateLines(25) |>
+    sf::st_as_sf()
+
+  if (nrow(spwll) != nrow(spwll))
     stop("Internal error: different sizes for spatial objects", call. = TRUE)
 
-  # Transform each segment/section into pol ygon
-  spwlp <- rgeos::gBuffer(spwll, width = buffer, byid = TRUE, capStyle = 'SQUARE')
+  # Transform each segment/section into polygon
+  spwlp <- sf::st_buffer(spwll, dist = buffer, endCapStyle = "SQUARE")
 
   if (debug)
   {
     plot(las@header, main = "Post-processed lines and buffers")
-    #plot(as(spwll, "SpatialPoints"), add = TRUE)
-    plot(spwll, add = TRUE, col =  1:length(spwll))
-    plot(spwlp, add = TRUE, border =  1:length(spwlp), lty = 3)
+    plot(spwll, add = TRUE, col = 1:nrow(spwll))
+    plot(spwlp, add = TRUE, border =  1:nrow(spwlp), lty = 3)
   }
 
   if (debug)
@@ -121,15 +125,10 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     plot(olas@header, main = paste0("Tower candidates and corrected candidates"))
   }
 
-  # Replace CRS of LAS object to ensure compatibility
-  # with the definition of a sp object as otherwise a conflict
-  # will likely occur when using lidR::clip_roi()
-  # This is a short term fix only, the real solution is
-  # to ditch sp/rgeos in favor of sf
-  lidR::st_crs(olas) <- raster::crs(pwll)
 
   # Loop on each segment
-  output <- vector("list", length(spwll))
+  # NOTE: SLOWEST LOOP
+  output <- vector("list", nrow(spwll))
   for (k in 1:length(output))
   {
     # Keep only the section k
@@ -146,13 +145,13 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     las <- lidR::merge_spatial(las, dtm, "dtm")
 
     # Compute the orientation of the wires and towers
-    orientation <- sp::coordinates(pwll)[[1]][[1]]
+    orientation <- sf::st_coordinates(pwll)[,c(1:2)]
     orientation <- lidR:::fast_eigen_values(orientation)$coef
     angle <- atan(orientation[2,1]/orientation[1,1])
 
     # Find candidate location at being a transmission tower
     towers <- tower.candidates(las, dtm, tower.spec, angle)
-    if (length(towers) == 0)
+    if (nrow(towers) == 0)
     {
       output[[k]] <- towers
       next
@@ -161,7 +160,7 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     if (debug)
     {
       plot(towers, add = TRUE, col = "gray40")
-      graphics::text(towers@coords[,1], towers@coords[,2]+40, 1:length(towers), cex = 0.8, col = k)
+      graphics::text(sf::st_coordinates(towers)[,1], sf::st_coordinates(towers)[,2]+40, 1:nrow(towers), cex = 0.8, col = k)
       #plot(las) %>% add_treetops3d(towers, radius = 5)
     }
 
@@ -178,16 +177,16 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     if (debug)
     {
       plot(rtowers, add = TRUE, col = k)
-      graphics::text(rtowers@coords[,1], rtowers@coords[,2]+40, 1:length(rtowers), cex = 0.8, col = k)
+      graphics::text(sf::st_coordinates(rtowers)[,1], sf::st_coordinates(rtowers)[,2]+40, 1:nrow(rtowers), cex = 0.8, col = k)
       #plot(las) %>% add_treetops3d(rtowers, radius = 5)
     }
 
     # Clean some remaining false positive in deflection
     # (I don't remember which case it covers)
     if (length(output) > 1) {
-      pwlp2 <- rgeos::gBuffer(pwlp, width = -10, byid = TRUE, capStyle = 'SQUARE')
-      keep = rgeos::gWithin(rtowers, pwlp2, byid = TRUE)
-      towers <- rtowers[as.logical(keep),]
+      pwlp2 <- sf::st_buffer(pwlp, dist = -10, endCapStyle = 'SQUARE')
+      keep = sf::st_within(rtowers, pwlp2, sparse = FALSE)[,1]
+      towers <- rtowers[keep,]
     } else {
       towers <- rtowers
     }
@@ -203,7 +202,7 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
   {
     ptowers <- do.call(rbind, output)
 
-    points_matrix <- rgeos::gWithinDistance(ptowers, dist = tower.spec$length[2]/2, byid = TRUE)
+    points_matrix <- sf::st_is_within_distance(ptowers, dist = tower.spec$length[2]/2, sparse = FALSE)
     diag(points_matrix) <- NA
     v <- colSums(points_matrix, na.rm = TRUE) == 0
     ptowers$deflection = !v
@@ -215,28 +214,29 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
       plot(olas@header, main = "All towers before deflection correction")
       plot(ptowers, add = TRUE, col = ptowers$deflection + 1)
       #plot(textent, add = TRUE,  border = tlocation$deflection + 1)
-      graphics::arrows(ptowers@coords[,1], ptowers@coords[,2], ptowers@coords[,1] + 100 * ptowers$ux,  ptowers@coords[,2] + 100 * ptowers$uy, length = 0.05, col = ptowers$deflection + 1)
+      coords <- sf::st_coordinates(ptowers)
+      graphics::arrows(coords[,1], coords[,2], coords[,1] + 100 * ptowers$ux,  coords[,2] + 100 * ptowers$uy, length = 0.05, col = ptowers$deflection + 1)
     }
 
     # last correction for deflection
-    in_several_lines = rgeos::gContains(spwlp, ptowers, byid = TRUE)
-    remove = rep(FALSE, length(ptowers))
+    in_several_lines <- sf::st_contains(spwlp, ptowers, sparse = FALSE)
+    remove = rep(FALSE, nrow(ptowers))
 
     for (k in 1:length(output))
     {
       pwll <- spwll[k,]
 
-      orientation <- sp::coordinates(pwll)[[1]][[1]]
+      orientation <- sf::st_coordinates(pwll)[,c(1:2)]
       orientation <- lidR:::fast_eigen_values(orientation)$coef
       angle <- atan(orientation[2,1]/orientation[1,1])
 
-      in_this_lines = in_several_lines[,k]
+      in_this_lines = in_several_lines[k,]
 
       good_angle = abs(ptowers$theta - angle) < 10e-3
       remove[in_this_lines & !good_angle & !ptowers$deflection] <- TRUE
     }
 
-    ptowers = ptowers[!remove,]
+    ptowers <- ptowers[!remove,]
     ptowers$type = tower.spec$name
 
     if (debug)
@@ -244,17 +244,13 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
       plot(olas@header, main = "Final towers")
       plot(ptowers, add = TRUE, col = ptowers$deflection + 1)
       #plot(textent, add = TRUE,  border = tlocation$deflection + 1)
-      graphics::arrows(ptowers@coords[,1], ptowers@coords[,2], ptowers@coords[,1] + 100 * ptowers$ux,  ptowers@coords[,2] + 100 * ptowers$uy, length = 0.05, col = ptowers$deflection + 1)
+      coords <- sf::st_coordinates(ptowers)
+      graphics::arrows(coords[,1], coords[,2], coords[,1] + 100 * ptowers$ux,  coords[,2] + 100 * ptowers$uy, length = 0.05, col = ptowers$deflection + 1)
     }
-    ptowers <- sf::st_as_sf(ptowers)
-    sf::st_crs(ptowers) <- crs_las
     return(ptowers)
   }
   else
   {
-    #ptowers <- sf::st_as_sf(output[[1]])
-    #sf::st_crs(ptowers) <- crs_las
-    #return(ptowers)
     return(NULL)
   }
 }
@@ -275,14 +271,12 @@ find_transmissiontowers.LAScluster = function(las, powerline, dtm, type = c("wai
 #' @export
 find_transmissiontowers.LAScatalog = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
-  if (is(powerline, "sf") | is(powerline, "sfc")) powerline <- sf::as_Spatial(powerline)
-  pwrlp <- rgeos::gBuffer(powerline, width = buffer)
+  lidR:::assert_is_all_of(powerline, "sf")
+  pwrlp <- sf::st_buffer(powerline, dist = buffer)
   ctg <- lidR::catalog_intersect(las, pwrlp)
-  #las$processed <- FALSE
-  #las$processed[row.names(las) %in% row.names(ctg)] <- TRUE
 
   options = list(need_buffer = TRUE, automerge = TRUE, drop_null = TRUE)
-  output <- lidR::catalog_map(las, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
+  output <- lidR::catalog_map(ctg, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
   return(output)
 }
 
@@ -306,7 +300,7 @@ tower.candidates = function(las, dtm, tower.spec, angle)
   ssub <- lidR::filter_poi(ssplas, Z > dtm + tower.spec$height[1]/2)
 
   # Find the local max using an oriented windows using both raw an normalized data
-  # This because in both we could miss some some towers but not the same.
+  # This because in both we could miss some towers but not the same
   nulltower <- sf::st_as_sf(las@data[1], coords = c("X", "Y"), crs = sf::st_crs(lidR::crs(las)))
   if (lidR::npoints(sub)) {
     rtowers <- find_localmaxima(sub, c(200, tower.spec$length[2]*1.2, angle))
@@ -333,15 +327,14 @@ tower.candidates = function(las, dtm, tower.spec, angle)
 
   towers <- rbind(stowers, rtowers)
   if (nrow(towers) == 0)
-    return(sf::as_Spatial(nulltower)[0,])
+    return(nulltower[0,])
   
   # Keep only one tower if duplicates
-  towers <- sf::as_Spatial(towers)
-  towers <- towers[!duplicated(towers@data),]
+  towers <- towers[!duplicated(towers),]
   #plot(las) %>% add_treetops3d(towers, radius = 7)
 
   # We keep only one tower if a tower has been found twice at two close locations
-  points_matrix <- rgeos::gWithinDistance(towers, dist = tower.spec$length[2]*1.2, byid = TRUE)
+  points_matrix <- sf::st_is_within_distance(towers, dist = tower.spec$length[2]*1.2, sparse = FALSE)
   points_matrix[lower.tri(points_matrix, diag = TRUE)] <- FALSE
   v <- rowSums(points_matrix) == 0
   towers = towers[v, ]
@@ -367,13 +360,13 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
 {
   Z <- NULL
 
-  buffer.towers <- rgeos::gBuffer(towers, width = tower.spec$length[2]/2*1.3, byid = TRUE)
+  buffer.towers <- sf::st_buffer(towers, dist = tower.spec$length[2]/2*1.3)
   las2   <- lidR::filter_poi(las, Z > dtm + 2)
 
-  coords <- vector("list", length(buffer.towers))
-  for (i in 1:length(buffer.towers))
+  coords <- vector("list", nrow(buffer.towers))
+  for (i in 1:nrow(buffer.towers))
   {
-    Zbottom <- raster::extract(dtm, towers[i,])
+    Zbottom <- raster::extract(dtm, sf::as_Spatial(towers[i,]))
     sub2 <- lidR::clip_roi(las2, buffer.towers[i,])
     sub2 <- lidR::filter_poi(sub2, Z > Zbottom)
     coords[[i]] <- tower.correction(sub2, angle, tower.spec, Zbottom)
@@ -382,7 +375,7 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
   coords <- data.table::rbindlist(coords)
   rm     <- coords$Tower
 
-  # No towers, return an empty SpatialPolygonsDataFrame and jump to next iteration
+  # No towers, return an empty Simple feature collection and jump to next iteration
   if (all(!rm))
   {
     out <- towers[0,]
@@ -390,11 +383,14 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
     return(out)
   }
 
-  # Finalize the positionning of the towers in a SpatialPointsDataFrame
+  # Finalize the positionning of the towers
   coordinates <- as.matrix(coords[rm, 1:2])
-  rectified.towers <- towers[rm,]
-  rectified.towers@coords <- coordinates
-  rectified.towers$Z = coords$Z[rm]
+  rectified.towers <- sf::st_as_sf(
+    cbind(sf::st_drop_geometry(towers[rm,]), coordinates),
+    coords = c("X", "Y"),
+    crs = sf::st_crs(towers)
+    )
+  rectified.towers$Z <- coords$Z[rm]
   return(rectified.towers)
 }
 
@@ -423,10 +419,10 @@ tower.correction <-  function(las, angle, tower.spec, Zbottom)
   # A tower is a continuous structure horizontally
   a <- angle + pi/2
   rot <- matrix(c(cos(a), sin(a), -sin(a), cos(a)), ncol = 2)
-  coords <- as.matrix(lidR:::coordinates(filter_poi(las, Z > Zm - tower.spec$wire.distance.to.top - 2)))
-  zero <- sp::bbox(las)[,1]
-  coords[,1] <- coords[,1] - zero[1]
-  coords[,2] <- coords[,2] - zero[2]
+  coords <- as.matrix(lidR:::coordinates(lidR::filter_poi(las, Z > Zm - tower.spec$wire.distance.to.top - 2)))
+  bbox <- sf::st_bbox(las)
+  coords[,1] <- coords[,1] - bbox$xmin
+  coords[,2] <- coords[,2] - bbox$ymin
   coords <- coords %*% rot
   X <- lidR:::round_any(coords[,1], las@header@PHB[["X scale factor"]])
   #Y <- lidR:::round_any(coords[,2], las@header@PHB[["Y scale factor"]])
