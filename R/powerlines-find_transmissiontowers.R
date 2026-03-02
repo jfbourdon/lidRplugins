@@ -277,6 +277,7 @@ find_transmissiontowers.LAScatalog = function(las, powerline, dtm, type = c("wai
 
   options = list(need_buffer = TRUE, automerge = TRUE, drop_null = TRUE)
   output <- lidR::catalog_map(ctg, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
+
   return(output)
 }
 
@@ -380,7 +381,7 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
   {
     out <- towers[0,]
     out <- sf::st_as_sf(out, crs = sf::st_crs(towers))
-    out@bbox <- lidR::st_bbox(las)
+    # out@bbox <- lidR::st_bbox(las)
     return(out)
   }
 
