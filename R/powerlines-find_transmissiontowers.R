@@ -93,11 +93,11 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     plot(pwll, add = TRUE, col = 1:nrow(pwll))
   }
 
-  pwll <- pwll |>
-    sf::as_Spatial() |>
-    gJoinLines(2) |>
-    sf::st_as_sf() |>
-    sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
+  #pwll <- pwll |>
+  #  sf::as_Spatial() |>
+  #  gJoinLines(2) |>
+  #  sf::st_as_sf() |>
+  #  sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
 
   # Split each segment/section of the powerline
   # This allow to support powerline deflection
@@ -174,7 +174,7 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
     # on the towers (the ears of the towers are actually detected) and we clear false positives
     rtowers <- tower.rectification(las, towers, tower.spec, angle, dtm)
 
-    if (debug)
+    if (debug && nrow(rtowers) != 0)
     {
       plot(rtowers, add = TRUE, col = k)
       graphics::text(sf::st_coordinates(rtowers)[,1], sf::st_coordinates(rtowers)[,2]+40, 1:nrow(rtowers), cex = 0.8, col = k)
@@ -379,7 +379,8 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
   if (all(!rm))
   {
     out <- towers[0,]
-    out@bbox <- lidR::bbox(las)
+    out <- sf::st_as_sf(out, crs = sf::st_crs(towers))
+    out@bbox <- lidR::st_bbox(las)
     return(out)
   }
 
@@ -420,7 +421,7 @@ tower.correction <-  function(las, angle, tower.spec, Zbottom)
   a <- angle + pi/2
   rot <- matrix(c(cos(a), sin(a), -sin(a), cos(a)), ncol = 2)
   coords <- as.matrix(lidR:::coordinates(lidR::filter_poi(las, Z > Zm - tower.spec$wire.distance.to.top - 2)))
-  bbox <- sf::st_bbox(las)
+  bbox <- lidR::st_bbox(las)
   coords[,1] <- coords[,1] - bbox$xmin
   coords[,2] <- coords[,2] - bbox$ymin
   coords <- coords %*% rot
@@ -435,7 +436,7 @@ tower.correction <-  function(las, angle, tower.spec, Zbottom)
   K <- sum(h$counts == 0L) <= tower.spec$length[1]/2
 
   # Test if the area covered in small
-  A <- area(las) <= (pi * (tower.spec$length[2]/2*1.3)^2)*0.8
+  A <- as.numeric(st_area(las)) <= (pi * (tower.spec$length[2]/2*1.3)^2)*0.8
 
   # There is at most 1/4 test that says it's not a tower: its a tower
   is.tower = J+G+2*K+A >= 4
