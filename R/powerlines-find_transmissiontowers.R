@@ -56,6 +56,9 @@
 #' @export
 find_transmissiontowers = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
+  powerline <- powerline |>
+    sf::st_as_sf() |>
+    sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
   UseMethod("find_transmissiontowers", las)
 }
 
@@ -258,13 +261,13 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
 #' @export
 find_transmissiontowers.LAScluster = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
-  bbox <- raster::extent(las)
+  bbox <- lidR::st_bbox(las)
   las <- lidR::readLAS(las)
   if (lidR::is.empty(las)) return(NULL)
 
   # pos and extent enforced to TRUE to guarantee to remove buffer properly
-  output <- find_transmissiontowers(las, powerline, dtm, type, buffer)
-  output <- raster::crop(output, bbox)
+  output <- find_transmissiontowers.LAS(las, powerline, dtm, type, buffer)
+  output <- sf::st_crop(output, bbox)
   return(output)
 }
 
@@ -276,7 +279,7 @@ find_transmissiontowers.LAScatalog = function(las, powerline, dtm, type = c("wai
   ctg <- lidR::catalog_intersect(las, pwrlp)
 
   options = list(need_buffer = TRUE, automerge = TRUE, drop_null = TRUE)
-  output <- lidR::catalog_map(ctg, find_transmissiontowers, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
+  output <- lidR::catalog_map(ctg, find_transmissiontowers.LAS, powerline = powerline, type = type, buffer = buffer, dtm = dtm, .options = options)
 
   return(output)
 }
