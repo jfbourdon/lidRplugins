@@ -43,6 +43,8 @@ classify_wires.LAS = function(las, wires, dtm)
 {
   classify_from_virtual = FALSE
 
+  wires <- sf::st_crop(wires, lidR::st_bbox(las))
+  
   SECTIONS = unique(wires$section)
 
   las2 <- merge_spatial(las, dtm, "dtm")
@@ -51,7 +53,7 @@ classify_wires.LAS = function(las, wires, dtm)
   for (section in SECTIONS)
   {
     wire = wires[wires$section == section,]
-    tower.spec = get_tower_spec(wire$type[1])
+    tower.spec = get_tower_spec(wire$type[1]) ## Refaire le choix de type de 
     wire$type <- NULL
 
     thresholds = 0
@@ -61,25 +63,19 @@ classify_wires.LAS = function(las, wires, dtm)
       thresholds = (tower.spec$wire.layers - 1) * tower.spec$wire.distance + 5
     }
 
-    lwires <- sp::SpatialLines(list(sp::Lines(list(sp::Line(wire@coords)), ID = "1")))
-    pwires <- rgeos::gBuffer(lwires, width = 0.5*tower.spec$length[2], capStyle = "SQUARE")
-    raster::crs(lwires) <- raster::crs(wires)
-    raster::crs(pwires) <- raster::crs(wires)
+    lwires <- sf::st_sf(ID = '1', geometry = sf::st_sfc(sf::st_linestring(sf::st_coordinates(wire))))
+    pwires <- sf::st_buffer(lwires, dist = 0.5*tower.spec$length[2], endCapStyle = "SQUARE")
+    sf::st_crs(lwires) <- sf::st_crs(wires)
+    sf::st_crs(pwires) <- sf::st_crs(wires)
 
     sub <- clip_roi(las2, raster::extent(pwires))
-    layout <- lidR:::rOverlay(sub, 10)
+    layout <- terra::rast(terra::ext(sub), resolution = 10)
+    layout <- raster::raster(layout)
     cloth <- raster::rasterize(wire, layout)$z
 
     ker <- matrix(1,3,3)
     for (k in 1:2)
       cloth <- raster::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
-
-    # Convert sp object to sf and force CRS definition
-    # to ensure compatibility with lidR::merge_spatial()
-    # This is a short term fix only, the real solution is
-    # to ditch sp/rgeos in favor of sf
-    pwires <- sf::st_as_sf(pwires)
-    sf::st_crs(pwires) <- lidR::st_crs(sub)
 
     sub <- merge_spatial(sub, pwires, "pwires")
     sub <- merge_spatial(sub, cloth, "cloth")

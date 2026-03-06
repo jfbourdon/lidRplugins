@@ -53,7 +53,7 @@ classify_transmissiontowers.LAS = function(las, towers, dtm, type = NULL, thresh
   return(las)
 }
 
-tower.boundingbox = function(towers, type)
+tower.boundingbox = function(towers, type = NULL)
 {
   if (length(towers) == 0L)
   {
