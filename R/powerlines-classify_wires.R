@@ -6,8 +6,8 @@
 #' tower classification must be performed first.
 #'
 #' @param las An object of class LAS.
-#' @param wires A \code{SpatialPointsDataFrame} returned by \link{track_wires}
-#' @param dtm A RasterLayer. The digital terrain model is need to get the relative elevations
+#' @param wires A \code{sf POINT} returned by \link{track_wires}
+#' @param dtm A \code{SpatRaster}. The digital terrain model is need to get the relative elevations
 #'
 #' @references
 #' Roussel J, Achim A, Auty D. 2021. Classification of high-voltage power line structures in low density
@@ -22,7 +22,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #' las <- classify_transmissiontowers(las, towers, dtm)
@@ -68,14 +68,13 @@ classify_wires.LAS = function(las, wires, dtm)
     sf::st_crs(lwires) <- sf::st_crs(wires)
     sf::st_crs(pwires) <- sf::st_crs(wires)
 
-    sub <- clip_roi(las2, raster::extent(pwires))
+    sub <- clip_roi(las2, terra::ext(pwires))
     layout <- terra::rast(terra::ext(sub), resolution = 10)
-    layout <- raster::raster(layout)
-    cloth <- raster::rasterize(wire, layout)$z
+    cloth <- terra::rasterize(wire, layout)$z
 
     ker <- matrix(1,3,3)
     for (k in 1:2)
-      cloth <- raster::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
+      cloth <- terra::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
 
     sub <- merge_spatial(sub, pwires, "pwires")
     sub <- merge_spatial(sub, cloth, "cloth")

@@ -10,7 +10,7 @@
 #' \link{find_transmissiontowers}
 #' @param powerline \code{sf LINESTRING} or \code{sfc LINESTRING} that map the electrical network accurately. The method may
 #' be improved later to get rid of this information.
-#' @param dtm A RasterLayer. Digital Terrain Model is useful to find a relevant elevation for virtual
+#' @param dtm A \code{SpatRaster}. Digital Terrain Model is useful to find a relevant elevation for virtual
 #' towers
 #' @param type One of "waist-type" or "double-circuit" according to
 #' \href{http://www.hydroquebec.com/learning/transport/types-pylones.html}{Hydro-Quebec}. Can also
@@ -18,7 +18,7 @@
 #' @param debug logical. Plot the different steps of the algorithm so one can try to figure out what
 #' is going wrong.
 #'
-#' @return  A \code{SpatialPointsDataFrame} that actually represents 3D lines with several attributes
+#' @return  A \code{sf POINT} that actually represents 3D lines with several attributes
 #' per points. \code{Z} the elevation, \code{virtual} tells if the wire has been found with two
 #' consecutive tower and is thus accurate or if only one tower was used and in this case the wire is
 #' a pure guess, \code{section} attributes an ID to each wire section i.e. between two towers, \code{ID}
@@ -37,7 +37,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #' wires <- track_wires(towers, network, dtm, "waist-type")
@@ -84,7 +84,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
   }
 
   # Crop the lines to the extent of the ROI
-  pwll <- sf::st_crop(powerline, raster::extent(dtm))
+  pwll <- sf::st_crop(powerline, terra::ext(dtm))
   if (nrow(pwll) == 0)
   {
     data   <- data.frame(z = numeric(0), virtual = integer(0), ID = integer(0), type = character())
@@ -94,7 +94,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
 
   if (debug)
   {
-    plot(raster::extent(dtm), main = paste0("Raw powerline network"), asp = 1)
+    plot(terra::ext(dtm), main = paste0("Raw powerline network"), asp = 1)
     plot(pwll, add = T, col = 1:length(pwll))
   }
 
@@ -108,7 +108,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
 
   if (debug)
   {
-    plot(raster::extent(dtm), main = "Post-processed lines", asp = 1)
+    plot(terra::ext(dtm), main = "Post-processed lines", asp = 1)
     plot(spwll, add = T, col =  1:length(spwll))
     plot(spwlp, add = T, border =  1:length(spwlp), lty = 3)
   }
@@ -128,7 +128,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
 
   if (debug)
   {
-    plot(raster::extent(dtm), main = "Detection of the powerlines", asp = 1)
+    plot(terra::ext(dtm), main = "Detection of the powerlines", asp = 1)
   }
 
   # Loop on each section
@@ -168,7 +168,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
 
     lwires <- do.call(rbind, wire)
     sf::st_crs(lwires) <- proj
-    crlwires <- sf::st_crop(lwires, raster::extent(dtm) - 1)
+    crlwires <- sf::st_crop(lwires, terra::ext(dtm) - 1)
     pwires <- sf::st_buffer(lwires, dist = 0.3*tower.spec$length[2], endCapStyle = "SQUARE")
     pwires_crop <- sf::st_crop(pwires, pwlp)
     pwires_crop <- sf::st_cast(pwires, 'POLYGON')
@@ -221,7 +221,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
       vtowers2 <- sf::st_sf(geometry = sf::st_sfc(sf::st_point(x2), crs = proj))
       vtowers <- rbind(vtowers1, vtowers2)
       sf::st_crs(vtowers) <- sf::st_crs(tow)
-      Z <- raster::extract(dtm, vtowers) + mean(tlocation$Z - tlocation$dtm)
+      Z <- terra::extract(dtm, vtowers)[,2] + mean(tlocation$Z - tlocation$dtm)
 
       if (anyNA(Z)) stop("Impossible to find DTM value at the edge of the raster. The DTM is not large enought.")
 
@@ -306,14 +306,14 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
     col[wires$virtual & col == "darkorange"] <- "goldenrod1"
     col[wires$virtual & col == "yellow"] <- "white"
 
-    plot(raster::extent(dtm), main = paste0("Final extraction"))
+    plot(terra::ext(dtm), main = paste0("Final extraction"))
     plot(towers, add = T, col = towers$deflection + 1)
     #plot(textent, add = T,  border = textent$deflection + 1)
     plot(wires, col = col, add = T, cex = 0.1)
   }
 
   # clean wires below ground
-  z0 <- raster::extract(dtm, wires)
+  z0 <- terra::extract(dtm, wires)[,2]
   invalid <- unique(wires$section[which(wires$z - z0 < 0)])
   wires <- wires[!wires$section %in% invalid,]
   return(wires)

@@ -4,18 +4,18 @@
 #' towers. The method is supervised by a map of the electric network and the tower types.
 #'
 #' @param las An object of class LAS with absolute elevations or a LAScatalog.
-#' @param powerline A \code{SpatialLines*} that map the electrical network accurately
+#' @param powerline A \code{sf LINESTRING} that map the electrical network accurately
 #' @param type character. One of "waist-type", "waist-type-small", "double-circuit" according to
 #' \href{http://www.hydroquebec.com/learning/transport/types-pylones.html}{Hydro-Quebec}. Can also
 #' be a list with custom specifications. See \link{get_tower_spec}.
-#' @param buffer numeric. The \code{SpatialLines*} will be buffered internally to catch the powerlines
+#' @param buffer numeric. The \code{sf LINESRING} will be buffered internally to catch the powerlines
 #' and the transmission towers. The buffer must ensure to catch all the powerlines.
-#' @param dtm \code{RasterLayer}. Because the algorithm relies on absolute elevation a DTM is
+#' @param dtm \code{SpatRaster}. Because the algorithm relies on absolute elevation a DTM is
 #' requirered to compute the relative elevations.
 #' @param debug logical. Plot the different steps of the algorithm so one can try to figure out what
 #' is going wrong.
 #'
-#' @return A \code{SpatialPointDataFrame} with several attributes. \code{Z} the elevation of the tower,
+#' @return A \code{sf POINT} with several attributes. \code{Z} the elevation of the tower,
 #' \code{dtm} the elevation of the bottom of the tower aligned with the top, \code{theta} the angle
 #' of the tower with the x axis in radian, \code{ux, uy} the directional vectors, \code{deflection}
 #' tells if a given tower is on a deflection (deflection towers are found twice by design) and
@@ -34,7 +34,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #'
@@ -66,7 +66,7 @@ find_transmissiontowers = function(las, powerline, dtm, type = c("waist-type", "
 find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
   lidR:::assert_is_all_of(powerline, "sf")
-  lidR:::assert_is_all_of(dtm, "RasterLayer")
+  lidR:::assert_is_all_of(dtm, "SpatRaster")
   lidR:::assert_all_are_positive(buffer)
   stopifnot(lidR::st_crs(las) == sf::st_crs(powerline))
 
@@ -370,7 +370,7 @@ tower.rectification <- function(las, towers, tower.spec, angle, dtm)
   coords <- vector("list", nrow(buffer.towers))
   for (i in 1:nrow(buffer.towers))
   {
-    Zbottom <- raster::extract(dtm, sf::as_Spatial(towers[i,]))
+    Zbottom <- terra::extract(dtm, towers[i,])[,2]
     sub2 <- lidR::clip_roi(las2, buffer.towers[i,])
     sub2 <- lidR::filter_poi(sub2, Z > Zbottom)
     coords[[i]] <- tower.correction(sub2, angle, tower.spec, Zbottom)

@@ -6,8 +6,8 @@
 #' rectangle as 'transmission tower'.
 #'
 #' @param las An object of class LAS
-#' @param towers SpatialPointsDataFrame returned by \link{find_transmissiontowers}.
-#' @param dtm A RasterLayer. The digital terrain model is useful to find the bottom of the towers
+#' @param towers An \code{sf POINT} returned by \link{find_transmissiontowers}.
+#' @param dtm A \code{SpatRaster}. The digital terrain model is useful to find the bottom of the towers
 #' @param threshold numeric. Height above ground. Points below this elevation are not classified
 #' as transmission towers.
 #'
@@ -26,7 +26,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #' las <- classify_transmissiontowers(las, towers, dtm)
