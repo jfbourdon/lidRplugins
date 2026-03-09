@@ -33,13 +33,13 @@
 #' }
 #' @family electrical network
 #' @export
-classify_wires = function(las, wires, dtm)
+classify_wires = function(las, wires, dtm, type = NULL)
 {
   UseMethod("classify_wires", las)
 }
 
 #' @export
-classify_wires.LAS = function(las, wires, dtm)
+classify_wires.LAS = function(las, wires, dtm, type = NULL)
 {
   classify_from_virtual = FALSE
 
@@ -53,7 +53,11 @@ classify_wires.LAS = function(las, wires, dtm)
   for (section in SECTIONS)
   {
     wire = wires[wires$section == section,]
-    tower.spec = get_tower_spec(wire$type[1]) ## Refaire le choix de type
+    if (is.null(type)){
+      tower.spec <- get_tower_spec(wire$type[1])
+    } else {
+      tower.spec <- get_tower_spec(type)
+    }
     wire$type <- NULL
 
     thresholds = 0
