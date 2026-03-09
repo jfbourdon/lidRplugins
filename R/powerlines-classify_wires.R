@@ -53,7 +53,7 @@ classify_wires.LAS = function(las, wires, dtm)
   for (section in SECTIONS)
   {
     wire = wires[wires$section == section,]
-    tower.spec = get_tower_spec(wire$type[1]) ## Refaire le choix de type de 
+    tower.spec = get_tower_spec(wire$type[1]) ## Refaire le choix de type
     wire$type <- NULL
 
     thresholds = 0
@@ -68,9 +68,9 @@ classify_wires.LAS = function(las, wires, dtm)
     sf::st_crs(lwires) <- sf::st_crs(wires)
     sf::st_crs(pwires) <- sf::st_crs(wires)
 
-    sub <- clip_roi(las2, terra::ext(pwires))
-    layout <- terra::rast(terra::ext(sub), resolution = 10)
-    cloth <- terra::rasterize(wire, layout)$z
+    sub <- clip_roi(las2, sf::st_bbox(pwires))
+    layout <- terra::rast(terra::ext(sub), resolution = min(10, tower.spec$length[2]/4.5))
+    cloth <- terra::rasterize(wire, layout, field = 'z')
 
     ker <- matrix(1,3,3)
     for (k in 1:2)
