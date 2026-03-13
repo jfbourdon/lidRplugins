@@ -57,6 +57,9 @@
 find_transmissiontowers = function(las, powerline, dtm, type = c("waist-type", "double-circuit"), buffer = 125, debug = FALSE)
 {
   powerline <- powerline |>
+    sf::st_union() |>
+    sf::st_line_merge() |>
+    sf::st_cast('LINESTRING') |>
     sf::st_as_sf() |>
     sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
   UseMethod("find_transmissiontowers", las)
@@ -105,7 +108,6 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
   # Split each segment/section of the powerline
   # This allow to support powerline deflection
   spwll <- pwll |>
-    sf::as_Spatial() |>
     gSplitLines() |>
     gElongateLines(25) |>
     sf::st_as_sf()
@@ -186,6 +188,7 @@ find_transmissiontowers.LAS = function(las, powerline, dtm, type = c("waist-type
 
     # Clean some remaining false positive in deflection
     # (I don't remember which case it covers)
+    # It seems to remove towers found too close to the sides of the polygons. They are probably trees
     if (length(output) > 1) {
       pwlp2 <- sf::st_buffer(pwlp, dist = -10, endCapStyle = 'SQUARE')
       keep = sf::st_within(rtowers, pwlp2, sparse = FALSE)[,1]
@@ -580,49 +583,44 @@ catenary = function(p1, p2, c = 1500) {
 
 gSplitLines <- function(sl)
 {
-  ccs <- sp::coordinates(sl)
-
-  out = vector("list", length(ccs))
-  for (j in 1:length(ccs))
+  ccs <- sf::st_coordinates(sl)
+  
+  out = vector("list", length(unique(ccs[,'L1'])))
+  for (j in unique(ccs[,'L1']))
   {
-    cc = ccs[[j]]
-    if (length(cc) > 1) stop("Internal error length(cc) > 1 in gSplit")
-    cc = cc[[1]]
-
+    cc = ccs[ccs[,'L1'] == j,]
+    
     outputlist <- vector("list", nrow(cc) - 1)
     i <- 1
     while (i < (nrow(cc)))
     {
-      coords1 <- cc[i,]
-      coords2 <- cc[i+1,]
-      bind <- rbind(coords1, coords2)
-      outputlist[[i]] <- sp::Lines(list(sp::Line(bind)), as.character(i))
+      coords1 <- cc[i, c('X','Y')]
+      coords2 <- cc[i+1, c('X','Y')]
+      bind <- as.matrix(rbind(coords1, coords2))
+      outputlist[[i]] <- sf::st_linestring(bind)
       i <- i+1
     }
-
-    out[[j]] <- sp::SpatialLines(outputlist, proj4string = sl@proj4string)
+    
+    out[[j]] <- sf::st_sf(geometry = sf::st_sfc(outputlist), crs = sf::st_crs(sl))
   }
-
+  
   out <- do.call(rbind, out)
   return(out)
 }
 
-
 gElongateLines <- function(sl, l = 25)
 {
-  ccs <- sp::coordinates(sl)
-  ccs2 = ccs
-  for (j in 1:length(ccs))
+  ccs <- sf::st_coordinates(sl)
+  ccs2 = as.list(sl$geometry)
+  for (j in unique(ccs[,'L1']))
   {
-    cc = ccs[[j]]
-    if (length(cc) > 1) stop("Internal error: length(cc) > 1")
-    cc = cc[[1]]
-    if (nrow(cc) > 2) stop("Internal error: spatial lines are not made of simple segments")
+    cc = ccs[ccs[,'L1'] == j,]
+    if (nrow(cc) > 2) stop("Internal error: linestings are not made of simple segments")
 
     orientation <- lidR:::fast_eigen_values(cc)$coef
     angle <- atan(orientation[2,1]/orientation[1,1])
 
-    line1 = sp::Line(cc)
+    line1 = sf::st_linestring(cc[,c('X','Y')])
 
     xs = if (cc[1,1] < cc[2,1]) -1 else 1
     if (sign(angle) > 0)
@@ -635,45 +633,47 @@ gElongateLines <- function(sl, l = 25)
     cc[1,2] = cc[1,2] + ys * l * sin(angle)
     cc[2,2] = cc[2,2] - ys * l * sin(angle)
 
-    line2 = sp::Line(cc)
+    line2 = sf::st_linestring(cc[,c('X','Y')])
 
-    if (sp::LineLength(line2) <= sp::LineLength(line1))
+    if (sf::st_length(line2) <= sf::st_length(line1))
       stop("Internal error: line not elongated in gElongate")
 
-    ccs2[[j]] <- sp::Lines(line2, ID = as.character(j))
+    ccs2[[j]] <- line2
   }
 
-  out = sp::SpatialLines(ccs2, proj4string = sl@proj4string)
+  out = sf::st_sf(geometry = sf::st_sfc(ccs2), crs = sf::st_crs(sl))
   return(out)
 }
 
-gJoinLines = function(sl, th = 2)
-{
-  cc <- sp::coordinates(sl)
-  cc <- lapply(cc, function(x) { do.call(rbind, x) })
-  cc <- do.call(rbind, cc)
-  sp <- sp::SpatialPoints(cc)
-  m <- rgeos::gWithinDistance(sp, dist = 5, byid = TRUE)
-  m[upper.tri(m, diag = TRUE)] <- FALSE
-  join <- which(m, arr.ind = TRUE)
-
-  if (nrow(join) > 1) stop("Internal error: to many lines to join")
-  if (nrow(join) == 0) return(sl)
-  if (length(join) == length(sp)) return(sl)
-
-  cc <- cc[as.numeric(join),]
-  xm <- mean(cc[,1])
-  ym <- mean(cc[,2])
-
-  for (i in 1:length(sl))
-  {
-    l <- sl@lines[[i]]@Lines[[1]]@coords
-    u <- l[,1] %in% cc[,1] & l[,2] %in% cc[,2]
-    sl@lines[[i]]@Lines[[1]]@coords[u,1] <- xm
-    sl@lines[[i]]@Lines[[1]]@coords[u,2] <- ym
-  }
-
-  sl2 <- rgeos::gLineMerge(sl)
-  sl2 <- sp::disaggregate(sl2)
-  return(sl2)
-}
+### Replaced by st_line_merge(st_union(sl))
+### Not modernized
+#gJoinLines = function(sl, th = 2)
+#{
+#  cc <- sp::coordinates(sl)
+#  cc <- lapply(cc, function(x) { do.call(rbind, x) })
+#  cc <- do.call(rbind, cc)
+#  sp <- sp::SpatialPoints(cc)
+#  m <- rgeos::gWithinDistance(sp, dist = 5, byid = TRUE)
+#  m[upper.tri(m, diag = TRUE)] <- FALSE
+#  join <- which(m, arr.ind = TRUE)
+#
+#  if (nrow(join) > 1) stop("Internal error: to many lines to join")
+#  if (nrow(join) == 0) return(sl)
+#  if (length(join) == length(sp)) return(sl)
+#
+#  cc <- cc[as.numeric(join),]
+#  xm <- mean(cc[,1])
+#  ym <- mean(cc[,2])
+#
+#  for (i in 1:length(sl))
+#  {
+#    l <- sl@lines[[i]]@Lines[[1]]@coords
+#    u <- l[,1] %in% cc[,1] & l[,2] %in% cc[,2]
+#    sl@lines[[i]]@Lines[[1]]@coords[u,1] <- xm
+#    sl@lines[[i]]@Lines[[1]]@coords[u,2] <- ym
+#  }
+#
+#  sl2 <- rgeos::gLineMerge(sl)
+#  sl2 <- sp::disaggregate(sl2)
+#  return(sl2)
+#}

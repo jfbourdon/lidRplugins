@@ -223,7 +223,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
       sf::st_crs(vtowers) <- sf::st_crs(tow)
       Z <- terra::extract(dtm, vtowers)[,2] + mean(tlocation$Z - tlocation$dtm)
 
-      if (anyNA(Z)) stop("Impossible to find DTM value at the edge of the raster. The DTM is not large enought.")
+      if (anyNA(Z)) stop("Impossible to find DTM value at the edge of the raster. The DTM is not large enough.")
 
       vtowers <- sf::st_sf(geometry = sf::st_sfc(vtowers$geometry), data.frame(Z, deflection = FALSE, virtual = TRUE))
       tow <- rbind(tow, vtowers)
@@ -240,7 +240,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
       #plot(tow, add = T, col = tow$deflection + 2)
 
       # Remove the virtual towers if not needed.
-      # VT are not needed if the they prolongate a line at a deflection point.
+      # VT are not needed if they prolongate a line at a deflection point.
       # Special case if there is only a deflection. In this case we are scrapped
       if (sum(tow$deflection) <= sum(!tow$virtual))
       {
