@@ -99,9 +99,12 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
   }
 
   # This starts like the tower detection by fixing the shapefile
-  pwll <- sf::st_simplify(pwll, preserveTopology = F, dTolerance = 40)
-  pwll <- sf::as_Spatial(pwll)
-  #pwll <- gJoinLines(pwll, 2)
+  pwll <- pwll |>
+    sf::st_union() |>
+    sf::st_line_merge() |>
+    sf::st_cast('LINESTRING') |>
+    sf::st_as_sf() |>
+    sf::st_simplify(preserveTopology = FALSE, dTolerance = 40)
   spwll <- gSplitLines(pwll)
   spwll <- sf::st_as_sf(spwll)
   spwlp <- sf::st_buffer(spwll, dist = 125, endCapStyle = 'SQUARE')

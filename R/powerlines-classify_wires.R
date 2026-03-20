@@ -83,7 +83,7 @@ classify_wires.LAS = function(las, wires, dtm, type = NULL)
     sub <- merge_spatial(sub, pwires, "pwires")
     sub <- merge_spatial(sub, cloth, "cloth")
     sub$cloth[is.nan(sub$cloth)] <- Inf
-    sub$Classification[sub$Z > sub$cloth - thresholds & sub$Classification != lidR::LASTRANSMISSIONTOWER] <- lidR::LASWIRECONDUCTOR
+    sub$Classification[sub$Z > sub$cloth - thresholds & sub$Classification != lidR::LASTRANSMISSIONTOWER & sub$Classification != lidR::LASGROUND] <- lidR::LASWIRECONDUCTOR
     ids = sub$ID[sub$Classification == lidR::LASWIRECONDUCTOR]
     las@data[["Classification"]][ids] <- lidR::LASWIRECONDUCTOR
 

@@ -44,6 +44,9 @@ classify_transmissiontowers = function(las, towers, dtm, type = NULL, threshold 
 classify_transmissiontowers.LAS = function(las, towers, dtm, type = NULL, threshold = 2)
 {
   towers <- sf::st_crop(towers, lidR::st_bbox(las))
+  if(nrow(towers) == 0){
+    return(las)
+  }
   towers <- tower.boundingbox(towers, type)
   sf::st_crs(towers) <- lidR::st_crs(las)
 
