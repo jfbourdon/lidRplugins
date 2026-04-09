@@ -188,15 +188,33 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
       plot(lwires, add = T)
       plot(tlocation, add = T, col = kk)
     }
+    
+    # Groups tower series
+    sees <- sf::st_intersects(pwires, tlocation, sparse=FALSE)
+    groups <- vector(mode = 'list', length = nrow(sees))
+    for (i in 1:nrow(sees)){
+      groups[i] <- list(which(sees[i,]))
+    }
+    while (sum(sapply(groups, length)) != n){
+      for (i in 1:length(groups)){
+        for (j in 1:length(groups)){
+          if (length(intersect(groups[[i]], groups[[j]]))>0){
+            groups[i] <- list(union(groups[[i]], groups[[j]]))
+          }
+        }
+      }
+      groups <- lapply(groups, sort)
+      groups <- unique(groups)
+    }
 
     # Generate catenary between two consecutive towers
-    nlines <- nrow(pwires)
+    nlines <- length(groups)
     Hxy <- vector("list", nlines)
     for (i in 1:nlines)
     {
       # Get the towers for the processing line
-      line <- pwires[i,]
-      toww <- sf::st_intersection(tlocation, line)
+      line <- sf::st_union(pwires[groups[[i]],])
+      toww <- tlocation[groups[[i]],]
       tow  <- toww[, c("Z", "deflection")]
       tow$virtual = FALSE
 
@@ -219,7 +237,7 @@ track_wires <- function(towers, powerline, dtm, type = c("waist-type", "double-c
         m[i,]
       })
       x2 <- matrix(x2[, which.min(x2[1,])], ncol = 2)
-
+      
       vtowers1 <- sf::st_sf(geometry = sf::st_sfc(sf::st_point(x1), crs = proj))
       vtowers2 <- sf::st_sf(geometry = sf::st_sfc(sf::st_point(x2), crs = proj))
       vtowers <- rbind(vtowers1, vtowers2)
