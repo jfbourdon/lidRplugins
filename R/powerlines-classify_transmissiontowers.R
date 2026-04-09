@@ -6,8 +6,8 @@
 #' rectangle as 'transmission tower'.
 #'
 #' @param las An object of class LAS
-#' @param towers SpatialPointsDataFrame returned by \link{find_transmissiontowers}.
-#' @param dtm A RasterLayer. The digital terrain model is useful to find the bottom of the towers
+#' @param towers An \code{sf POINT} returned by \link{find_transmissiontowers}.
+#' @param dtm A \code{SpatRaster}. The digital terrain model is useful to find the bottom of the towers
 #' @param threshold numeric. Height above ground. Points below this elevation are not classified
 #' as transmission towers.
 #'
@@ -26,7 +26,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #' las <- classify_transmissiontowers(las, towers, dtm)
@@ -35,21 +35,19 @@
 #' }
 #' @family electrical network
 #' @export
-classify_transmissiontowers = function(las, towers, dtm, threshold = 2)
+classify_transmissiontowers = function(las, towers, dtm, type = NULL, threshold = 2)
 {
   UseMethod("classify_transmissiontowers", las)
 }
 
 #' @export
-classify_transmissiontowers.LAS = function(las, towers, dtm, threshold = 2)
+classify_transmissiontowers.LAS = function(las, towers, dtm, type = NULL, threshold = 2)
 {
-  towers <- tower.boundingbox(towers)
-
-  # Convert sp object to sf and force CRS definition
-  # to ensure compatibility with lidR::merge_spatial()
-  # This is a short term fix only, the real solution is
-  # to ditch sp/rgeos in favor of sf
-  towers <- sf::st_as_sf(towers)
+  towers <- sf::st_crop(towers, lidR::st_bbox(las))
+  if(nrow(towers) == 0){
+    return(las)
+  }
+  towers <- tower.boundingbox(towers, type)
   sf::st_crs(towers) <- lidR::st_crs(las)
 
   tmp <- lidR::merge_spatial(las, towers, "towers")
@@ -58,46 +56,45 @@ classify_transmissiontowers.LAS = function(las, towers, dtm, threshold = 2)
   return(las)
 }
 
-tower.boundingbox = function(towers)
+tower.boundingbox = function(towers, type = NULL)
 {
   if (length(towers) == 0L)
   {
-    data = data.frame(maxZ = numeric(0), minZ = numeric(0), deflection = integer(0))
-    out = sp::SpatialPolygonsDataFrame(sp::SpatialPolygons(list()), data)
-    raster::projection(out) <- raster::projection(towers)
-    out@bbox = towers@bbox
+    data = data.frame(id = integer(0), maxZ = numeric(0), minZ = numeric(0))
+    out = sf::st_sf(data, geometry = sf::st_sfc())
     return(out)
   }
 
-  lines <- vector("list", length(towers))
-  for (i in 1:length(towers))
+  lines <- vector("list", nrow(towers))
+  for (i in 1:nrow(towers))
   {
     tower <- towers[i,]
-    tower.spec <- get_tower_spec(tower$type)
-
-    height <- tower.spec$width[2]
-    width <- tower.spec$length[2]
+    if (is.null(type)){
+      tower.spec <- get_tower_spec(tower$type)
+    } else {
+      tower.spec <- get_tower_spec(type)
+    }
+    
+    width <- tower.spec$width[2]
     hwidth <- width/2
-    hheight <- height/2
-    p1 <- tower@coords
+    p1 <- sf::st_coordinates(tower)
     ux <- tower$ux
     uy <- tower$uy
-    orientation <- matrix(c(ux, uy, uy, -ux), ncol = 2)
 
     p2 <- p1
-    p2[,1] <- p2[,1] + orientation[1,2] * (hwidth - hheight)
-    p2[,2] <- p2[,2] + orientation[2,2] * (hwidth - hheight)
-    p1[,1] <- p1[,1] - orientation[1,2] * (hwidth - hheight)
-    p1[,2] <- p1[,2] - orientation[2,2] * (hwidth - hheight)
+    p2[,1] <- p2[,1] + ux * hwidth
+    p2[,2] <- p2[,2] + uy * hwidth
+    p1[,1] <- p1[,1] - ux * hwidth
+    p1[,2] <- p1[,2] - uy * hwidth
 
-    lines[[i]] <- sp::Lines(sp::Line(rbind(p1, p2)), as.character(i))
+    lines[[i]] <- sf::st_sf(id = as.character(i), geometry = sf::st_sfc(sf::st_linestring(rbind(p1, p2))))
   }
 
-  tower.orientation <- sp::SpatialLines(lines, proj4string = towers@proj4string)
+  tower.orientation <- do.call(rbind, lines)
   #plot(tower.orientation, add = T)
 
   # Compute an extent for the tower by buffering the lines
-  towers.extent <- rgeos::gBuffer(tower.orientation, width = tower.spec$width[2]/2, capStyle = "SQUARE", byid = T)
+  towers.extent <- sf::st_buffer(tower.orientation, dist = tower.spec$length[2]/2, endCapStyle = "FLAT")
   towers.extent$maxZ <- towers$Z
   towers.extent$minZ <- towers$dtm
 

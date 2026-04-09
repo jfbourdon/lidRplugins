@@ -6,8 +6,8 @@
 #' tower classification must be performed first.
 #'
 #' @param las An object of class LAS.
-#' @param wires A \code{SpatialPointsDataFrame} returned by \link{track_wires}
-#' @param dtm A RasterLayer. The digital terrain model is need to get the relative elevations
+#' @param wires A \code{sf POINT} returned by \link{track_wires}
+#' @param dtm A \code{SpatRaster}. The digital terrain model is need to get the relative elevations
 #'
 #' @references
 #' Roussel J, Achim A, Auty D. 2021. Classification of high-voltage power line structures in low density
@@ -22,7 +22,7 @@
 #' dtmtif  <- system.file("extdata", "wire-dtm.tif", package="lidRplugins")
 #' las <- readLAS(LASfile, select = "xyzc")
 #' network <- sf::st_read(wireshp)
-#' dtm <- raster::raster(dtmtif)
+#' dtm <- terra::rast(dtmtif)
 #'
 #' towers <- find_transmissiontowers(las, network, dtm, "waist-type")
 #' las <- classify_transmissiontowers(las, towers, dtm)
@@ -33,16 +33,18 @@
 #' }
 #' @family electrical network
 #' @export
-classify_wires = function(las, wires, dtm)
+classify_wires = function(las, wires, dtm, type = NULL)
 {
   UseMethod("classify_wires", las)
 }
 
 #' @export
-classify_wires.LAS = function(las, wires, dtm)
+classify_wires.LAS = function(las, wires, dtm, type = NULL)
 {
   classify_from_virtual = FALSE
 
+  wires <- sf::st_crop(wires, lidR::st_bbox(las))
+  
   SECTIONS = unique(wires$section)
 
   las2 <- merge_spatial(las, dtm, "dtm")
@@ -51,7 +53,11 @@ classify_wires.LAS = function(las, wires, dtm)
   for (section in SECTIONS)
   {
     wire = wires[wires$section == section,]
-    tower.spec = get_tower_spec(wire$type[1])
+    if (is.null(type)){
+      tower.spec <- get_tower_spec(wire$type[1])
+    } else {
+      tower.spec <- get_tower_spec(type)
+    }
     wire$type <- NULL
 
     thresholds = 0
@@ -61,30 +67,23 @@ classify_wires.LAS = function(las, wires, dtm)
       thresholds = (tower.spec$wire.layers - 1) * tower.spec$wire.distance + 5
     }
 
-    lwires <- sp::SpatialLines(list(sp::Lines(list(sp::Line(wire@coords)), ID = "1")))
-    pwires <- rgeos::gBuffer(lwires, width = 0.5*tower.spec$length[2], capStyle = "SQUARE")
-    raster::crs(lwires) <- raster::crs(wires)
-    raster::crs(pwires) <- raster::crs(wires)
+    lwires <- sf::st_sf(ID = '1', geometry = sf::st_sfc(sf::st_linestring(sf::st_coordinates(wire))))
+    pwires <- sf::st_buffer(lwires, dist = 0.5*tower.spec$length[2], endCapStyle = "SQUARE")
+    sf::st_crs(lwires) <- sf::st_crs(wires)
+    sf::st_crs(pwires) <- sf::st_crs(wires)
 
-    sub <- clip_roi(las2, raster::extent(pwires))
-    layout <- lidR:::rOverlay(sub, 10)
-    cloth <- raster::rasterize(wire, layout)$z
+    sub <- clip_roi(las2, sf::st_bbox(pwires))
+    layout <- terra::rast(terra::ext(sub), resolution = min(10, tower.spec$length[2]/4.5))
+    cloth <- terra::rasterize(wire, layout, field = 'z')
 
     ker <- matrix(1,3,3)
     for (k in 1:2)
-      cloth <- raster::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
-
-    # Convert sp object to sf and force CRS definition
-    # to ensure compatibility with lidR::merge_spatial()
-    # This is a short term fix only, the real solution is
-    # to ditch sp/rgeos in favor of sf
-    pwires <- sf::st_as_sf(pwires)
-    sf::st_crs(pwires) <- lidR::st_crs(sub)
+      cloth <- terra::focal(cloth, ker, fun = stats::median, na.rm = TRUE, pad = T)
 
     sub <- merge_spatial(sub, pwires, "pwires")
     sub <- merge_spatial(sub, cloth, "cloth")
     sub$cloth[is.nan(sub$cloth)] <- Inf
-    sub$Classification[sub$Z > sub$cloth - thresholds & sub$Classification != lidR::LASTRANSMISSIONTOWER] <- lidR::LASWIRECONDUCTOR
+    sub$Classification[sub$Z > sub$cloth - thresholds & sub$Classification != lidR::LASTRANSMISSIONTOWER & sub$Classification != lidR::LASGROUND] <- lidR::LASWIRECONDUCTOR
     ids = sub$ID[sub$Classification == lidR::LASWIRECONDUCTOR]
     las@data[["Classification"]][ids] <- lidR::LASWIRECONDUCTOR
 
